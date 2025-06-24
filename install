@@ -1,0 +1,152 @@
+﻿#!/bin/bash
+
+exec 2> >(tee -a install-errors.log >&2)
+
+echo "Input root password"
+read root_password
+
+echo "Input user password"
+read user_password
+
+# Execute parted commands for selected disk
+parted /dev/nvme0n1 --script mklabel gpt
+parted /dev/nvme0n1 --script mkpart ESP fat32 1MiB 512MiB
+parted /dev/nvme0n1 --script set 1 boot on
+parted /dev/nvme0n1 --script mkpart primary 513MiB 100%
+
+echo "Encrypting partition $disk..."
+cryptsetup luksFormat /dev/nvme0n1p2 --batch-mode
+
+# Manually enter password to unlock encrypted partition
+echo "Unlocking encrypted partition..."
+cryptsetup open /dev/nvme0n1p2 luks
+
+# Check available devices in /dev/mapper/
+echo "Checking available devices in /dev/mapper/:"
+ls /dev/mapper/*
+
+# Create physical volume (PV) on encrypted partition
+echo "Creating physical volume (PV) on /dev/mapper/luks..."
+pvcreate /dev/mapper/luks
+
+# Create volume group (VG) main
+echo "Creating volume group main..."
+vgcreate main /dev/mapper/luks
+
+# Create logical volume (LV) root using all available space
+echo "Creating logical volume root..."
+lvcreate -l 100%FREE main -n root
+
+# Show all logical partitions
+echo "All logical partitions:"
+lvs
+
+echo "Formatting partition $disk-part2 as ext4..."
+mkfs.ext4 /dev/mapper/main-root
+
+# Format boot partition as Fat32 (on /dev/nvme0n1p1)
+echo "Formatting partition ${disk}1 as FAT32..."
+mkfs.fat -F 32 /dev/nvme0n1p1
+
+# Mount partitions for system installation
+echo "Mounting partition ${disk}2 to /mnt..."
+mount /dev/mapper/main-root /mnt
+
+# Create directory for boot mount
+echo "Creating directory /mnt/boot..."
+mkdir /mnt/boot
+
+# Mount boot partition to /mnt/boot
+echo "Mounting partition ${disk}1 to /mnt/boot..."
+mount /dev/nvme0n1p1 /mnt/boot
+
+# Install base software
+echo "Installing base packages..."
+pacstrap -K /mnt base linux linux-firmware base-devel lvm2
+
+# Install additional packages
+echo "Installing additional packages..."
+pacstrap /mnt dhcpcd net-tools iproute2 networkmanager vim micro efibootmgr iwd
+
+# Generate fstab
+echo "Generating fstab..."
+genfstab -U /mnt >> /mnt/etc/fstab
+cat /mnt/etc/fstab
+
+# System configuration via arch-chroot
+echo "Configuring system via arch-chroot..."
+arch-chroot /mnt <<EOF
+
+# Uncomment lines for ru_RU and en_US locales
+echo "Uncommenting ru_RU.UTF-8 and en_US.UTF-8 locales in /etc/locale.gen..."
+sed -i 's/#ru_RU.UTF-8 UTF-8/ru_RU.UTF-8 UTF-8/' /etc/locale.gen
+sed -i 's/#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
+
+# Generate locales
+echo "Generating locales..."
+locale-gen
+
+# Configure time
+echo "Configuring time..."
+ln -sf /usr/share/zoneinfo/Europe/Moscow /etc/localtime
+hwclock --systohc
+
+# Set hostname
+echo "Setting hostname..."
+echo "arch" > /etc/hostname
+
+# Set root password
+echo "root:$root_password" | chpasswd
+
+# Add new user and configure permissions
+echo "Adding new user 'user' and configuring permissions..."
+useradd -m -G wheel,users,video -s /bin/bash user
+echo "user:$user_password" | chpasswd
+
+# Enable dhcpcd and iwd services
+echo "Enabling dhcpcd and iwd services..."
+systemctl enable dhcpcd
+systemctl enable iwd.service
+
+echo "Configuring kernel"
+micro /etc/mkinitcpio.conf
+
+echo "Rebuilding kernel"
+mkinitcpio -p linux
+
+# Install bootloader
+echo "Installing bootloader"
+bootctl install --path=/boot
+
+# Go to bootloader directory and clear loader.conf if anything exists
+echo "Going to bootloader directory and clearing loader.conf if needed"
+cd /boot/loader
+
+# Edit loader.conf
+echo "Editing loader.conf"
+echo "timeout 3" >> /boot/loader/loader.conf
+echo "default arch" >> /boot/loader/loader.conf
+
+#micro /boot/loader/loader.conf
+
+# Go to boot configurations directory and create arch.conf
+echo "---------------------------------------------"
+cd /boot/loader/entries
+echo "title Arch Linux" > /boot/loader/entries/arch.conf
+echo "linux /vmlinuz-linux" >> /boot/loader/entries/arch.conf
+echo "initrd /initramfs-linux.img" >> /boot/loader/entries/arch.conf
+
+# Get UUID for /dev/nvme0n1p2 to properly specify in boot options
+UUID=\$(blkid /dev/nvme0n1p2 -o value -s UUID)
+
+# Insert encryption options
+echo "options rw cryptdevice=UUID=\$UUID:main root=/dev/mapper/main-root" >> /boot/loader/entries/arch.conf
+
+# Open arch.conf for manual editing
+# micro /boot/loader/entries/arch.conf
+
+sudo EDITOR=micro visudo
+
+EOF
+
+echo "Process completed."
