@@ -66,7 +66,7 @@ pacstrap -K /mnt base linux linux-firmware base-devel lvm2
 
 # Install additional packages
 echo "Installing additional packages..."
-pacstrap /mnt dhcpcd net-tools iproute2 networkmanager vim nano efibootmgr iwd
+pacstrap /mnt dhcpcd net-tools iproute2 networkmanager vim micro efibootmgr iwd
 
 # Generate fstab
 echo "Generating fstab..."
@@ -76,6 +76,8 @@ cat /mnt/etc/fstab
 # System configuration via arch-chroot
 echo "Configuring system via arch-chroot..."
 arch-chroot /mnt <<EOF
+
+pacman -S micro --noconfirm
 
 # Uncomment lines for ru_RU and en_US locales
 echo "Uncommenting ru_RU.UTF-8 and en_US.UTF-8 locales in /etc/locale.gen..."
@@ -109,7 +111,7 @@ systemctl enable dhcpcd
 systemctl enable iwd.service
 
 echo "Configuring kernel"
-nano /etc/mkinitcpio.conf
+micro /etc/mkinitcpio.conf
 
 echo "Rebuilding kernel"
 mkinitcpio -p linux
@@ -127,7 +129,7 @@ echo "Editing loader.conf"
 echo "timeout 3" >> /boot/loader/loader.conf
 echo "default arch" >> /boot/loader/loader.conf
 
-nano /boot/loader/loader.conf
+micro /boot/loader/loader.conf
 
 # Go to boot configurations directory and create arch.conf
 #---------------------------------------------
@@ -141,9 +143,9 @@ UUID=\$(blkid /dev/nvme0n1p2 -o value -s UUID)
 # Insert encryption options
 echo "options rw cryptdevice=UUID=\$UUID:main root=/dev/mapper/main-root" >> /boot/loader/entries/arch.conf
 
-nano /boot/loader/entries/arch.conf
+micro /boot/loader/entries/arch.conf
 
-sudo EDITOR=nano visudo
+sudo EDITOR=micro visudo
 
 EOF
 
