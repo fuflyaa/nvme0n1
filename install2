@@ -1,4 +1,5 @@
 #!/bin/bash
+exec 2> >(tee -a errors2.log >&2)
 # Generate fstab
 echo "Generating fstab..."
 genfstab -U /mnt >> /mnt/etc/fstab
