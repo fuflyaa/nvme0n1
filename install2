@@ -1,0 +1,67 @@
+#!/bin/bash
+
+exec 2> >(tee -a install-errors.log >&2)
+
+echo "Input root password"
+read root_password
+
+echo "Input user password"
+read user_password
+
+# Execute parted commands for selected disk
+parted /dev/nvme0n1 --script mklabel gpt
+parted /dev/nvme0n1 --script mkpart ESP fat32 1MiB 512MiB
+parted /dev/nvme0n1 --script set 1 boot on
+parted /dev/nvme0n1 --script mkpart primary 513MiB 100%
+
+echo "Encrypting partition $disk..."
+cryptsetup luksFormat /dev/nvme0n1p2 --batch-mode
+
+# Manually enter password to unlock encrypted partition
+echo "Unlocking encrypted partition..."
+cryptsetup open /dev/nvme0n1p2 luks
+
+# Check available devices in /dev/mapper/
+echo "Checking available devices in /dev/mapper/:"
+ls /dev/mapper/*
+
+# Create physical volume (PV) on encrypted partition
+echo "Creating physical volume (PV) on /dev/mapper/luks..."
+pvcreate /dev/mapper/luks
+
+# Create volume group (VG) main
+echo "Creating volume group main..."
+vgcreate main /dev/mapper/luks
+
+# Create logical volume (LV) root using all available space
+echo "Creating logical volume root..."
+lvcreate -l 100%FREE main -n root
+
+# Show all logical partitions
+echo "All logical partitions:"
+lvs
+
+echo "Formatting partition $disk-part2 as ext4..."
+mkfs.ext4 /dev/mapper/main-root
+
+# Format boot partition as Fat32 (on /dev/nvme0n1p1)
+echo "Formatting partition ${disk}1 as FAT32..."
+mkfs.fat -F 32 /dev/nvme0n1p1
+
+# Mount partitions for system installation
+echo "Mounting partition ${disk}2 to /mnt..."
+mount /dev/mapper/main-root /mnt
+
+# Create directory for boot mount
+echo "Creating directory /mnt/boot..."
+mkdir /mnt/boot
+
+# Mount boot partition to /mnt/boot
+echo "Mounting partition ${disk}1 to /mnt/boot..."
+mount /dev/nvme0n1p1 /mnt/boot
+
+# Install base software
+echo "Installing base packages..."
+pacstrap -K /mnt base linux linux-firmware base-devel lvm2 dhcpcd net-tools iproute2 networkmanager vim micro efibootmgr iwd
+sleep 40
+ls /mnt/bin/bash
