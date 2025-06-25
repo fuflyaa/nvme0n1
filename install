@@ -63,7 +63,8 @@ mount /dev/nvme0n1p1 /mnt/boot
 # Install base software
 echo "Installing base packages..."
 pacstrap -K /mnt base linux linux-firmware base-devel lvm2 dhcpcd net-tools iproute2 networkmanager vim micro efibootmgr iwd
-
+sleep 40
+ls /mnt/bin/bash
 # Generate fstab
 echo "Generating fstab..."
 genfstab -U /mnt >> /mnt/etc/fstab
