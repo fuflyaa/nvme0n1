@@ -1,6 +1,6 @@
 #!/bin/bash
 
-exec 2> >(tee -a install-errors.log >&2)
+exec 2> >(tee -a error1.log >&2)
 
 echo "Input root password"
 read root_password
