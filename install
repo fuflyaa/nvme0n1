@@ -129,7 +129,7 @@ echo "Editing loader.conf"
 echo "timeout 3" >> /boot/loader/loader.conf
 echo "default arch" >> /boot/loader/loader.conf
 
-micro /boot/loader/loader.conf
+#micro /boot/loader/loader.conf
 
 # Go to boot configurations directory and create arch.conf
 #---------------------------------------------
@@ -143,10 +143,10 @@ UUID=\$(blkid /dev/nvme0n1p2 -o value -s UUID)
 # Insert encryption options
 echo "options rw cryptdevice=UUID=\$UUID:main root=/dev/mapper/main-root" >> /boot/loader/entries/arch.conf
 
-micro /boot/loader/entries/arch.conf
+#micro /boot/loader/entries/arch.conf
 
 sudo EDITOR=micro visudo
 
 EOF
-
+umount -R /mnt
 echo "Process completed."
